@@ -259,7 +259,7 @@ const fzLocal = {
                     .join("_")
                     .toLowerCase();
                 // biome-ignore lint/suspicious/noExplicitAny: bad typing
-                let val: any = msg.data[at];
+                let val: any = (msg.data as KeyValue)[at];
                 if (val != null) {
                     // TODO: this is not possible??
                     if (utils.isObject(val) && "type" in val && "data" in val && val.type === "Buffer") {
@@ -273,6 +273,13 @@ const fzLocal = {
                         val = val.replace(/\s+/g, " ").trim(); // Remove extra and leading spaces
                     }
                     switch (at) {
+                        case "tariffPeriod":
+                            // For FW > 15, map to legacy properties
+                            if (meta.device.applicationVersion > 15) {
+                                result.current_price = val;
+                                result.active_register_tier_delivered = val;
+                            }
+                            break;
                         case "activeEnergyOutD01":
                         case "activeEnergyOutD02":
                         case "activeEnergyOutD03":
@@ -1075,13 +1082,6 @@ const allPhaseData = [
     },
     {
         cluster: clustersDef._0xFF66,
-        att: "tariffPeriod",
-        reportable: true,
-        onlyProducer: false,
-        exposes: e.text("LTARF", ea.STATE).withProperty("tariff_period").withDescription("Current supplier price label"),
-    },
-    {
-        cluster: clustersDef._0xFF66,
         att: "currentPrice",
         reportable: false,
         onlyProducer: false,
@@ -1776,6 +1776,31 @@ function getCurrentConfig(device: Zh.Device, options: KeyValue) {
         (e) =>
             e.linkyMode === linkyMode && (e.linkyPhase === linkyPhase || e.linkyPhase === linkyPhaseDef.all) && (linkyProduction || !e.onlyProducer),
     );
+
+    if (device.applicationVersion > 15) {
+        myExpose = myExpose.map((e) => {
+            if (e.att === "currentPrice") {
+                return {
+                    ...e,
+                    cluster: clustersDef._0xFF66,
+                    att: "tariffPeriod",
+                    reportable: true,
+                    report: {min: 0, max: repInterval.HOUR, change: 0},
+                };
+            }
+            if (e.att === "activeRegisterTierDelivered") {
+                return {
+                    ...e,
+                    cluster: clustersDef._0xFF66,
+                    att: "tariffPeriod",
+                    reportable: true,
+                    report: {min: 0, max: repInterval.HOUR, change: 0},
+                };
+            }
+            return e;
+        });
+
+    }
 
     // Filter even more, based on our current tarif
     let currentTarf = "";
